@@ -1,8 +1,8 @@
 name: Refresh
 on:
-  # performed every two hours
+  # custom: twice a day (07:30 / 19:30 UTC), staggered from Process, instead of every two hours
   schedule:
-    - cron: "0 */2 * * *"
+    - cron: "30 7,19 * * *"
   workflow_dispatch:
 
 concurrency:
@@ -29,6 +29,7 @@ env:
 jobs:
   process:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
 
     steps:
       - name: Checkout
