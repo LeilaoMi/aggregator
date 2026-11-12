@@ -180,7 +180,8 @@ def collect_subs(params: dict[str, object], ctx: PluginContext | None = None) ->
 
     # custom: freshness filter, only harvest forks pushed within N days (param 'max_age_days' or env GITFORK_MAX_AGE_DAYS)
     try:
-        max_age_days = int(params.get("max_age_days", 0) or os.environ.get("GITFORK_MAX_AGE_DAYS", "0") or 0)
+        raw = params["max_age_days"] if "max_age_days" in params else os.environ.get("GITFORK_MAX_AGE_DAYS", "0")
+        max_age_days = max(int(raw or 0), 0)
     except Exception:
         max_age_days = 0
 

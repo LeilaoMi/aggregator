@@ -9,6 +9,11 @@ permissions:
   contents: write
   issues: write
 
+# run syncs one at a time so an older run never force-pushes main back
+concurrency:
+  group: sync-upstream
+  cancel-in-progress: false
+
 jobs:
   sync:
     runs-on: ubuntu-latest
