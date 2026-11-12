@@ -4,6 +4,7 @@
 # @Time    : 2022-07-15
 
 import gzip
+import http.client
 import json
 import multiprocessing
 import os
@@ -48,6 +49,21 @@ def ssl_context(url: str) -> ssl.SSLContext:
         host = (urllib.parse.urlparse(url).hostname or "").lower().rstrip(".")
     except ValueError:
         return CTX
+
+
+class _HostAwareHTTPSHandler(urllib.request.HTTPSHandler):
+    """Pick the TLS context per hop, so a redirect onto a GitHub host is always verified."""
+
+    def https_open(self, req):
+        return self.do_open(http.client.HTTPSConnection, req, context=ssl_context(req.full_url))
+
+
+SAFE_OPENER = urllib.request.build_opener(_HostAwareHTTPSHandler())
+
+
+def urlopen(request: urllib.request.Request, timeout: float):
+    """Drop-in for urllib.request.urlopen that re-selects the TLS context on every redirect hop."""
+    return SAFE_OPENER.open(request, timeout=timeout)
 
     for suffix in VERIFIED_HOST_SUFFIXES:
         if host == suffix or host.endswith("." + suffix):
@@ -138,7 +154,7 @@ def http_get(
                 host, protocal = proxy[7:], "http"
             request.set_proxy(host=host, type=protocal)
 
-        response = urllib.request.urlopen(request, timeout=timeout, context=ssl_context(url))
+        response = urlopen(request, timeout=timeout)
         content = response.read(length)
         status_code = response.getcode()
         try:
@@ -472,7 +488,7 @@ def http_post(
         data = json.dumps(params).encode(encoding="UTF8")
         request = urllib.request.Request(url=url, data=data, headers=headers, method="POST")
         if allow_redirects:
-            return urllib.request.urlopen(request, timeout=timeout, context=ssl_context(url))
+            return urlopen(request, timeout=timeout)
 
         opener = urllib.request.build_opener(NoRedirect)
         return opener.open(request, timeout=timeout)
