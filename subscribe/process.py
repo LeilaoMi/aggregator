@@ -148,6 +148,42 @@ def assign(
     return tasks, groups
 
 
+def limit_servers(proxies: list[dict], group: str = "") -> list[dict]:
+    """custom: filter nodes by server regex and keep at most N nodes per server"""
+    pattern = os.environ.get("EXCLUDE_SERVERS", "").strip()
+    try:
+        cap = max(int(os.environ.get("MAX_PER_SERVER", "0") or 0), 0)
+    except ValueError:
+        cap = 0
+    if not pattern and cap <= 0:
+        return proxies
+
+    try:
+        regex = re.compile(pattern, flags=re.I) if pattern else None
+    except re.error:
+        logger.error(f"[LimitServers] invalid EXCLUDE_SERVERS regex: {pattern}")
+        regex = None
+
+    counter, results, excluded, capped = {}, [], 0, 0
+    for proxy in proxies:
+        server = str(proxy.get("server", "")).strip().lower()
+        if regex and regex.search(server):
+            excluded += 1
+            continue
+        if cap > 0:
+            counter[server] = counter.get(server, 0) + 1
+            if counter[server] > cap:
+                capped += 1
+                continue
+        results.append(proxy)
+
+    logger.info(
+        f"[LimitServers] group=[{group}] before={len(proxies)} excluded={excluded} capped={capped} "
+        f"after={len(results)} servers={len({str(p.get('server', '')).lower() for p in results})}"
+    )
+    return results
+
+
 def aggregate(args: argparse.Namespace) -> None:
     if not args or not isinstance(args, argparse.Namespace):
         return
@@ -234,6 +270,9 @@ def aggregate(args: argparse.Namespace) -> None:
 
         for item in nochecks:
             item.pop("sub", "")
+
+        # custom: drop nodes whose server matches EXCLUDE_SERVERS (regex), then cap nodes per server (MAX_PER_SERVER)
+        nochecks = limit_servers(nochecks, group=k)
 
         if len(nochecks) <= 0:
             logger.error(f"cannot fetch any proxy, group=[{k}], cost: {time.time()-starttime:.2f}s")

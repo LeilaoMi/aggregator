@@ -1,0 +1,68 @@
+name: Sync Upstream
+on:
+  # custom: weekly, Monday 04:00 Asia/Shanghai
+  schedule:
+    - cron: "0 20 * * 0"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+
+# run syncs one at a time so an older run never force-pushes main back
+concurrency:
+  group: sync-upstream
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check token
+        env:
+          SYNC_PAT: ${{ secrets.SYNC_PAT }}
+        run: |
+          if [ -z "$SYNC_PAT" ]; then
+            echo "::error::secret SYNC_PAT (classic PAT with repo + workflow scope) is required to push workflow changes"
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.SYNC_PAT }}
+
+      - name: Sync main and rebase custom
+        id: sync
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote add upstream https://github.com/wzdnzd/aggregator.git
+          git fetch upstream main
+          git fetch origin main custom
+
+          # main mirrors upstream exactly
+          git push origin upstream/main:refs/heads/main --force
+
+          git checkout -B custom origin/custom
+          if git rebase upstream/main; then
+            git push origin custom --force-with-lease
+            echo "result=ok" >> "$GITHUB_OUTPUT"
+          else
+            git rebase --abort
+            echo "result=conflict" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Open issue on conflict
+        if: steps.sync.outputs.result == 'conflict'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `custom 分支 rebase 上游冲突 ${new Date().toISOString().slice(0, 10)}`,
+              body: "main 已同步到上游最新，但 custom 分支 rebase 失败，custom 保持原样继续运行。需要手动解决冲突。",
+            });
+            core.setFailed("rebase conflict");
