@@ -211,13 +211,14 @@ def cmd(command: list[str], output: bool = False) -> tuple[bool, str]:
         if output
         else subprocess.Popen(command)
     )
-    p.wait()
+    # custom: communicate() drains the pipe while waiting, avoiding a deadlock when output exceeds the pipe buffer
+    stdout, _ = p.communicate()
 
     success, content = p.returncode == 0, ""
-    if output:
+    if output and stdout:
         try:
-            content = p.stdout.read().decode("utf8")
-        except:
+            content = stdout.decode("utf8", errors="replace")
+        except Exception:
             content = ""
     return success, content
 

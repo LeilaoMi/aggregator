@@ -3,8 +3,10 @@
 # @Author  : wzdnzd
 # @Time    : 2024-04-20
 
+import calendar
 import json
 import math
+import os
 import re
 import time
 from copy import deepcopy
@@ -66,7 +68,21 @@ def query_forks_count(username: str, repository: str, retry: int = 3) -> int:
         return -1
 
 
-def query_forks(username: str, repository: str, page: int, peer: int = 100, sort: str = "newest") -> dict[str, object]:
+def _is_fresh(fork: dict, max_age_days: int) -> bool:
+    """custom: keep only forks pushed within max_age_days (0 disables the filter)"""
+    if max_age_days <= 0:
+        return True
+    pushed = fork.get("pushed_at") or ""
+    try:
+        ts = calendar.timegm(time.strptime(pushed, "%Y-%m-%dT%H:%M:%SZ"))
+    except Exception:
+        return False
+    return time.time() - ts <= max_age_days * 86400
+
+
+def query_forks(
+    username: str, repository: str, page: int, peer: int = 100, sort: str = "newest", max_age_days: int = 0
+) -> dict[str, object]:
     username = utils.trim(username)
     repository = utils.trim(repository)
 
@@ -98,6 +114,8 @@ def query_forks(username: str, repository: str, page: int, peer: int = 100, sort
 
             fullname = fork.get("full_name", "")
             branch = fork.get("default_branch", DEFAULT_BRANCH)
+            if not _is_fresh(fork, max_age_days):
+                continue
 
             links = [f"{GITHUB_CONTENT_API}/{fullname}/{branch}/{p}" for p in PROXY_FILES]
             subs = [f"{GITHUB_CONTENT_API}/{fullname}/{branch}/{s}" for s in SUBSCRIBE_FILES]
@@ -160,10 +178,19 @@ def collect_subs(params: dict[str, object], ctx: PluginContext | None = None) ->
 
     materials, tasks = {}, []
 
+    # custom: freshness filter, only harvest forks pushed within N days (param 'max_age_days' or env GITFORK_MAX_AGE_DAYS)
+    try:
+        max_age_days = int(params.get("max_age_days", 0) or os.environ.get("GITFORK_MAX_AGE_DAYS", "0") or 0)
+    except Exception:
+        max_age_days = 0
+
     # load old subscriptions
     content = utils.http_get(url=pushtool.raw_url(item=persist), timeout=30)
     urls = re.findall(r"^https?:\/\/[^\s]+", content, flags=re.M)
     for url in urls:
+        # custom: with the freshness filter on, old fork links are dropped and re-added only if the fork is still fresh
+        if max_age_days > 0 and GITHUB_CONTENT_API in url:
+            continue
         url = github_warp(ghproxy=ghproxy, url=url)
         materials[url] = update_conf(config=config, sub=url)
 
@@ -198,7 +225,7 @@ def collect_subs(params: dict[str, object], ctx: PluginContext | None = None) ->
             sort = "newest"
 
         # concurrent fetch
-        pages = [[username, repository, x, peer, sort] for x in range(1, total + 1)]
+        pages = [[username, repository, x, peer, sort, max_age_days] for x in range(1, total + 1)]
         results = utils.multi_thread_run(func=query_forks, tasks=pages)
 
     include = utils.trim(params.get("include", ""))

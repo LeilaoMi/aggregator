@@ -27,6 +27,15 @@ env:
   # include spwcial protocols, such vless hysteria2 and hysteria
   ENABLE_SPECIAL_PROTOCOLS: ${{ vars.ENABLE_SPECIAL_PROTOCOLS }}
 
+  # custom: only harvest forks pushed within N days (0 = off)
+  GITFORK_MAX_AGE_DAYS: ${{ vars.GITFORK_MAX_AGE_DAYS || '3' }}
+
+  # custom: keep at most N nodes per server after alive check (0 = off)
+  MAX_PER_SERVER: ${{ vars.MAX_PER_SERVER || '5' }}
+
+  # custom: drop nodes whose server matches this regex
+  EXCLUDE_SERVERS: ${{ vars.EXCLUDE_SERVERS }}
+
 jobs:
   process:
     runs-on: ubuntu-latest
@@ -35,7 +44,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: main
+          ref: ${{ github.ref_name }}
 
       - name: Prepare
         uses: actions/setup-python@v5

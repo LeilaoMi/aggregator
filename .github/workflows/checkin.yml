@@ -1,7 +1,6 @@
 name: Checkin
 on:
-  schedule:
-    - cron: "45 02 * * *"
+  # custom: schedule disabled, checkin has no valid domain configured
   workflow_dispatch:
 
 jobs:
@@ -13,7 +12,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: main
+          ref: ${{ github.ref_name }}
 
       - name: Setup Python
         uses: actions/setup-python@v5
