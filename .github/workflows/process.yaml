@@ -36,6 +36,9 @@ env:
   # custom: drop nodes whose server matches this regex
   EXCLUDE_SERVERS: ${{ vars.EXCLUDE_SERVERS }}
 
+  # custom: fail the run (red) when 0 nodes survive or a push fails; set var to false to disable
+  FAIL_ON_ERROR: ${{ vars.FAIL_ON_ERROR || 'true' }}
+
 # custom: least-privilege GITHUB_TOKEN (scripts only read the repo; output goes out via PUSH_TOKEN / GIST_PAT)
 permissions:
   contents: read
