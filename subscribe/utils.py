@@ -50,6 +50,11 @@ def ssl_context(url: str) -> ssl.SSLContext:
     except ValueError:
         return CTX
 
+    for suffix in VERIFIED_HOST_SUFFIXES:
+        if host == suffix or host.endswith("." + suffix):
+            return VERIFIED_CTX
+    return CTX
+
 
 class _HostAwareHTTPSHandler(urllib.request.HTTPSHandler):
     """Pick the TLS context per hop, so a redirect onto a GitHub host is always verified."""
@@ -65,10 +70,6 @@ def urlopen(request: urllib.request.Request, timeout: float):
     """Drop-in for urllib.request.urlopen that re-selects the TLS context on every redirect hop."""
     return SAFE_OPENER.open(request, timeout=timeout)
 
-    for suffix in VERIFIED_HOST_SUFFIXES:
-        if host == suffix or host.endswith("." + suffix):
-            return VERIFIED_CTX
-    return CTX
 
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36"
