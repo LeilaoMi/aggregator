@@ -86,10 +86,10 @@ def load_configs(
         sys.exit(e.code)
     except ValueError as e:
         logger.error(f"invalid configuration: {e}")
-        sys.exit(0)
+        sys.exit(_failure_code())
     except Exception:
         logger.error(f"occur error when load task config:\n{traceback.format_exc()}")
-        sys.exit(0)
+        sys.exit(_failure_code())
 
 
 def assign(
@@ -146,6 +146,12 @@ def assign(
             taskids.append(globalid)
             groups[name] = taskids
     return tasks, groups
+
+
+def _failure_code() -> int:
+    """custom: exit code for broken runs, 1 unless FAIL_ON_ERROR is false"""
+    flag = utils.trim(os.environ.get("FAIL_ON_ERROR", "true")).lower()
+    return 0 if flag in ("false", "0", "no", "off") else 1
 
 
 def limit_servers(proxies: list[dict], group: str = "") -> list[dict]:
@@ -218,7 +224,7 @@ def aggregate(args: argparse.Namespace) -> None:
     )
     if not tasks:
         logger.error("cannot found any valid config, exit")
-        sys.exit(0)
+        sys.exit(_failure_code())
 
     # fetch all subscriptions
     generate_conf = os.path.join(PATH, "subconverter", "generate.ini")
@@ -240,6 +246,9 @@ def aggregate(args: argparse.Namespace) -> None:
 
         datasets[data[0]] = data[1]
 
+    # custom: collect problems so the workflow can fail (red) instead of silently passing
+    failures: list[str] = []
+
     for k, v in groups.items():
         if not v:
             logger.error(f"task is empty, group=[{k}]")
@@ -249,6 +258,7 @@ def aggregate(args: argparse.Namespace) -> None:
         proxies = list(itertools.chain.from_iterable(arrays))
         if len(proxies) == 0:
             logger.error(f"exit because cannot fetch any proxy node, group=[{k}]")
+            failures.append(f"group=[{k}] fetched 0 nodes")
             continue
 
         workspace = os.path.join(PATH, "clash")
@@ -276,6 +286,7 @@ def aggregate(args: argparse.Namespace) -> None:
 
         if len(nochecks) <= 0:
             logger.error(f"cannot fetch any proxy, group=[{k}], cost: {time.time()-starttime:.2f}s")
+            failures.append(f"group=[{k}] 0 alive nodes")
             continue
 
         group = process_config.groups.get(k)
@@ -324,6 +335,7 @@ def aggregate(args: argparse.Namespace) -> None:
             )
             if not success:
                 logger.error(f"cannot generate subconverter config file, group: {k}, target: {target}")
+                failures.append(f"group=[{k}] target=[{target}] generate config failed")
                 continue
 
             if subconverter.convert(binname=subconverter_bin, artifact=artifact):
@@ -331,6 +343,7 @@ def aggregate(args: argparse.Namespace) -> None:
 
                 if not os.path.exists(filepath) or not os.path.isfile(filepath):
                     logger.error(f"converted file {filepath} not found, group: {k}, target: {target}")
+                    failures.append(f"group=[{k}] target=[{target}] converted file missing")
                     continue
 
                 with open(filepath, "r", encoding="utf8") as f:
@@ -351,9 +364,14 @@ def aggregate(args: argparse.Namespace) -> None:
                     item=process_config.storage.items.get(storage_name, StorageItem()),
                     group=f"{k}::{target}",
                 )
+            else:
+                failures.append(f"group=[{k}] target=[{target}] convert failed")
 
             # clean workspace
             workflow.cleanup(os.path.join(PATH, "subconverter"), [dest_file, "generate.ini"])
+
+            if content and content.strip() and not persisted:
+                failures.append(f"group=[{k}] target=[{target}] push failed")
 
             if content and not persisted:
                 filename = os.path.join(PATH, "data", f"{k}-{dest_file}")
@@ -371,6 +389,14 @@ def aggregate(args: argparse.Namespace) -> None:
         alives=dict(subscribes),
         skip_remark=args.skip_remark,
     )
+
+    # custom: exit non-zero so GitHub Actions shows red when output is broken (disable with FAIL_ON_ERROR=false)
+    if failures:
+        for failure in failures:
+            logger.error(f"[ProcessFailed] {failure}")
+        code = _failure_code()
+        if code:
+            sys.exit(code)
 
 
 if __name__ == "__main__":

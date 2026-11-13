@@ -232,6 +232,10 @@ def merge_config(sites: list[SiteConfig]) -> list[SiteConfig]:
     return items
 
 
+class _SkipRemark(Exception):
+    """custom: internal signal to skip remarking crawled subscriptions"""
+
+
 def refresh(
     config: ProcessConfig, push: PushTo, alives: dict[str, bool] | None, filepath: str = "", skip_remark: bool = False
 ) -> None:
@@ -248,6 +252,10 @@ def refresh(
             url = push.raw_url(item=pushconf)
             content = utils.http_get(url=url)
             try:
+                if not content or not content.strip():
+                    # custom: storage file missing or raw CDN not ready yet, nothing to remark this round
+                    logger.warning("[UpdateWarn] skip remark because crawled subscriptions storage is empty")
+                    raise _SkipRemark()
                 data, count = json.loads(content), 0
                 for sub in invalidsubs:
                     record = data.pop(sub, None)
@@ -262,8 +270,11 @@ def refresh(
                     content = json.dumps(data)
                     push.push_to(content=content, item=pushconf, group="crawled-remark")
                     logger.info(f"[UpdateInfo] found {count} invalid crawled subscriptions")
-            except Exception:
-                logger.error("[UpdateError] remark invalid crawled subscriptions failed")
+            except _SkipRemark:
+                pass
+            except Exception as e:
+                # custom: keep the reason, never the url or content
+                logger.error(f"[UpdateError] remark invalid crawled subscriptions failed: {type(e).__name__}")
 
     if not config.update.enable:
         logger.debug("[UpdateError] skip update remote config because enable=[False]")
