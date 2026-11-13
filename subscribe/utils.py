@@ -4,6 +4,7 @@
 # @Time    : 2022-07-15
 
 import gzip
+import http.client
 import json
 import multiprocessing
 import os
@@ -33,6 +34,42 @@ from urlvalidator import isurl
 CTX = ssl.create_default_context()
 CTX.check_hostname = False
 CTX.verify_mode = ssl.CERT_NONE
+
+# custom: hosts that carry our tokens (GitHub API / Gist) always get full certificate verification
+VERIFIED_CTX = ssl.create_default_context()
+VERIFIED_HOST_SUFFIXES = (
+    "github.com",
+    "githubusercontent.com",
+)
+
+
+def ssl_context(url: str) -> ssl.SSLContext:
+    """Return a verifying SSL context for trusted token-bearing hosts, the legacy permissive one otherwise."""
+    try:
+        host = (urllib.parse.urlparse(url).hostname or "").lower().rstrip(".")
+    except ValueError:
+        return CTX
+
+    for suffix in VERIFIED_HOST_SUFFIXES:
+        if host == suffix or host.endswith("." + suffix):
+            return VERIFIED_CTX
+    return CTX
+
+
+class _HostAwareHTTPSHandler(urllib.request.HTTPSHandler):
+    """Pick the TLS context per hop, so a redirect onto a GitHub host is always verified."""
+
+    def https_open(self, req):
+        return self.do_open(http.client.HTTPSConnection, req, context=ssl_context(req.full_url))
+
+
+SAFE_OPENER = urllib.request.build_opener(_HostAwareHTTPSHandler())
+
+
+def urlopen(request: urllib.request.Request, timeout: float):
+    """Drop-in for urllib.request.urlopen that re-selects the TLS context on every redirect hop."""
+    return SAFE_OPENER.open(request, timeout=timeout)
+
 
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36"
@@ -118,7 +155,7 @@ def http_get(
                 host, protocal = proxy[7:], "http"
             request.set_proxy(host=host, type=protocal)
 
-        response = urllib.request.urlopen(request, timeout=timeout, context=CTX)
+        response = urlopen(request, timeout=timeout)
         content = response.read(length)
         status_code = response.getcode()
         try:
@@ -452,7 +489,7 @@ def http_post(
         data = json.dumps(params).encode(encoding="UTF8")
         request = urllib.request.Request(url=url, data=data, headers=headers, method="POST")
         if allow_redirects:
-            return urllib.request.urlopen(request, timeout=timeout, context=CTX)
+            return urlopen(request, timeout=timeout)
 
         opener = urllib.request.build_opener(NoRedirect)
         return opener.open(request, timeout=timeout)

@@ -36,6 +36,11 @@ env:
   # custom: drop nodes whose server matches this regex
   EXCLUDE_SERVERS: ${{ vars.EXCLUDE_SERVERS }}
 
+# custom: least-privilege GITHUB_TOKEN (scripts only read the repo; output goes out via PUSH_TOKEN / GIST_PAT)
+permissions:
+  contents: read
+
+
 jobs:
   process:
     runs-on: ubuntu-latest

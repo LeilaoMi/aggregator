@@ -3,13 +3,19 @@ on:
   schedule:
     - cron: "0 0 * * SUN"
 
+# custom: only allowed to delete workflow runs
+permissions:
+  actions: write
+  contents: read
+
+
 jobs:
   del_runs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - name: Delete
-        uses: GitRML/delete-workflow-runs@main
+        uses: GitRML/delete-workflow-runs@6c7cf4852e73c46502ee79494d99f5b504cacc6d # main, archived upstream; pinned
         with:
           token: ${{ github.token }}
           repository: ${{ github.repository }}

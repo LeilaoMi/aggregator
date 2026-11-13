@@ -78,7 +78,7 @@ class PushTo(object):
 
         try:
             request = urllib.request.Request(url=url, data=data, headers=headers, method=self.method)
-            response = urllib.request.urlopen(request, timeout=60, context=utils.CTX)
+            response = utils.urlopen(request, timeout=60)
             if self._is_success(response):
                 logger.info(f"[PushSuccess] push subscribes information to {self.name} successed, group=[{group}]")
                 return True
