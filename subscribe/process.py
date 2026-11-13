@@ -252,6 +252,7 @@ def aggregate(args: argparse.Namespace) -> None:
     for k, v in groups.items():
         if not v:
             logger.error(f"task is empty, group=[{k}]")
+            failures.append(f"group=[{k}] no task")
             continue
 
         arrays = [datasets.get(x, []) for x in v]
