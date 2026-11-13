@@ -115,7 +115,7 @@ class PushTo(object):
 
             retry -= 1
             if retry > 0:
-                return self.push_to(content, item, group, retry)
+                return self.push_to(content, item, group, retry, **kwargs)
 
             return False
 
