@@ -67,8 +67,13 @@ class PushTo(object):
         if item.local:
             self._storage(content=content, filename=item.local)
 
-        url, data, headers = self._generate_payload(content=content, item=item)
         payload = kwargs.get("payload", None)
+        if not payload and (content is None or not content.strip()):
+            # custom: e.g. subconverter produced an empty v2ray list; pushing it only fails with 422 and retries
+            logger.warning(f"[PushSkip] content is empty, skip pushing to {self.name}, group=[{group}]")
+            return False
+
+        url, data, headers = self._generate_payload(content=content, item=item)
         if payload and isinstance(payload, dict):
             try:
                 data = json.dumps(payload).encode("UTF8")
@@ -98,8 +103,10 @@ class PushTo(object):
                         message = e.read().decode("utf-8", errors="replace")
                     except Exception:
                         message = "cannot read error messgae from response"
+                    # custom: never log the target url (contains the gist id) or the pushed payload,
+                    # Actions logs of a public repo are readable by anyone
                     logger.error(
-                        f"[PushError] request failed, code: {code}, url: {url}, message: {message}, data: {data}"
+                        f"[PushError] request failed, code: {code}, name: {self.name}, group=[{group}], message: {message[:300]}"
                     )
             except Exception:
                 logger.error(f"[PushError] failed to process exception: {traceback.format_exc()}")
